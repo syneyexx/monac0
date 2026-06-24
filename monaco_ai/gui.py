@@ -34,6 +34,7 @@ from .dev_tools import (
     source_cleaner_preview,
     source_cleaner_run,
 )
+
 from .tools_service import (
     ConsentDiagnosticServer,
     get_public_ip,
@@ -41,7 +42,7 @@ from .tools_service import (
     read_diagnostic_records,
     test_telegram_token,
     validate_url,
-    ghost_track_service,
+    ghost_service,  <--- Dit is de juiste naam
 )
 
 from .telegram_settings import (
@@ -3397,7 +3398,6 @@ class MonacoGUI:
         self._tools_refresh_output("Tools ready. Kies een diagnostic of validator.")
 
     def _build_tools_panel(self) -> tk.Frame:
-        # Maak een nieuwe container frame
         container = tk.Frame(self.main_panel, bg=P.bg)
         
         # 1. Kop
@@ -3410,11 +3410,9 @@ class MonacoGUI:
         input_frame = tk.Frame(container, bg=P.bg)
         input_frame.pack(fill="x", padx=20, pady=10)
         
-        # Tabs voor keuzes
         tab_frame = tk.Frame(input_frame, bg=P.bg)
         tab_frame.pack(fill="x")
         
-        # Sla de geselecteerde tool op in de class zodat andere functies erbij kunnen
         self._gt_selected_tool = "ip"
         
         def select_tool(tool):
@@ -3426,7 +3424,6 @@ class MonacoGUI:
             elif tool == "user":
                 self._gt_label.config(text="Voer Username in (bijv. HunxByts):")
         
-        # Maak knoppen voor keuzes
         btn_ip = tk.Button(tab_frame, text="IP Tracker", bg=P.purple_dark, fg=P.text, 
                            command=lambda: select_tool("ip"), font=self.font_body_small, padx=10, pady=5)
         btn_ip.pack(side="left", padx=5)
@@ -3439,7 +3436,6 @@ class MonacoGUI:
                              command=lambda: select_tool("user"), font=self.font_body_small, padx=10, pady=5)
         btn_user.pack(side="left", padx=5)
 
-        # Input veld
         input_row = tk.Frame(input_frame, bg=P.bg)
         input_row.pack(fill="x", pady=10)
         
@@ -3451,31 +3447,27 @@ class MonacoGUI:
         self._gt_entry.pack(side="left", fill="x", expand=True)
         self._gt_entry.insert(0, "8.8.8.8") 
 
-        # Run knop
         btn_run = tk.Button(input_row, text="Start Tracking", bg=P.green, fg=P.text,
                             command=self._gt_run_tracking, font=self.font_body, padx=20, pady=10)
         btn_run.pack(side="left", padx=(10, 0))
 
-        # 3. Output Sectie
         output_frame = tk.Frame(container, bg=P.bg)
         output_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
         tk.Label(output_frame, text="Resultaten:", bg=P.bg, fg=P.muted, font=self.font_body).pack(anchor="w")
         
-        # Text widget voor resultaten
         self._gt_output = tk.Text(output_frame, bg=P.panel_2, fg=P.text, font=self.font_code, 
                                   relief="flat", bd=1, highlightbackground=P.border, highlightthickness=1,
                                   wrap="word", height=15)
         self._gt_output.pack(fill="both", expand=True, pady=10)
         
-        # Scrollbar
         scrollbar = tk.Scrollbar(output_frame, command=self._gt_output.yview)
         scrollbar.pack(side="right", fill="y")
         self._gt_output.config(yscrollcommand=scrollbar.set)
 
         return container
 
-    # NIEUWE HULP-FUNCTIE: Voeg deze toe net onder _build_tools_panel
+    # NIEUWE HULP-FUNCTIE (Voeg deze toe direct na _build_tools_panel)
     def _gt_run_tracking(self):
         value = self._gt_entry.get().strip()
         tool = self._gt_selected_tool
@@ -3486,9 +3478,9 @@ class MonacoGUI:
 
         result = ""
         if tool == "ip":
-            result = ghost_service.ip_track(value)
+            result = ghost_service.ip_track(value)  # <--- Belangrijk: ghost_service
         elif tool == "phone":
-            result = ghost_service.phone_track(value)
+            result = ghost_service.phone_track(value) # <--- Belangrijk: ghost_service
         elif tool == "user":
             result = f"Username '{value}' gevonden op:\n- GitHub\n- Twitter\n(Functie te implementeren in tools_service)"
 
