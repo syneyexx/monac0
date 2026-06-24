@@ -5,10 +5,7 @@ import mimetypes
 import socket
 import threading
 import time
-import requests
-import phonenumbers
 import urllib.parse
-from phonenumbers import carrier, geocoder, timezone
 from dataclasses import dataclass, asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,6 +18,7 @@ from .utils import utc_now, sha256_text
 
 
 DOCUMENT_EXTENSIONS = {".pdf", ".epub", ".docx", ".doc", ".txt", ".md", ".rtf", ".csv", ".json", ".xlsx", ".xls"}
+
 
 @dataclass(slots=True)
 class URLCheckResult:
@@ -252,60 +250,3 @@ def read_diagnostic_records(path: Path, limit: int = 50) -> str:
         except Exception:
             out.append(f"- {line[:160]}")
     return "\n".join(out)
-
-# --- GHOSTTRACK MODULE (Toegevoegd) ---
-class GhostTrackService:
-    def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-
-    def ip_track(self, ip: str) -> str:
-        if not ip:
-            return "Geen IP adres ingevuld."
-        try:
-            url = f"http://ipwho.is/{ip}"
-            resp = self.session.get(url, timeout=10)
-            data = resp.json()
-            if data.get("success"):
-                conn = data.get("connection", {})
-                tz = data.get("timezone", {})
-                return (
-                    f"✓ IP: {ip}\n"
-                    f"✓ Land: {data.get('country', 'N/A')} ({data.get('country_code', 'N/A')})\n"
-                    f"✓ Stad: {data.get('city', 'N/A')}\n"
-                    f"✓ Regio: {data.get('region', 'N/A')}\n"
-                    f"✓ Coördinaten: {data.get('latitude', 'N/A')}, {data.get('longitude', 'N/A')}\n"
-                    f"✓ ISP: {conn.get('isp', 'N/A')}\n"
-                    f"✓ Organisatie: {conn.get('organization', 'N/A')}\n"
-                    f"✓ Tijdzone: {tz.get('id', 'N/A')} ({tz.get('current_time', 'N/A')})"
-                )
-            else:
-                return f"Fout: {data.get('message', 'Onbekende fout')}"
-        except Exception as e:
-            return f"Netwerk fout: {e}"
-
-    def phone_track(self, phone: str) -> str:
-        if not phone:
-            return "Geen telefoonnummer ingevuld."
-        try:
-            parsed = phonenumbers.parse(phone, "NL")
-            if not phonenumbers.is_valid_number(parsed):
-                return "Ongeldig telefoonnummer."
-            region = phonenumbers.region_code_for_number(parsed)
-            carrier_name = carrier.name_for_number(parsed, "NL")
-            geo = geocoder.description_for_number(parsed, "NL")
-            tzs = timezone.time_zones_for_number(parsed)
-            return (
-                f"✓ Nummer: {phone}\n"
-                f"✓ Geldig: Ja\n"
-                f"✓ Regio: {region}\n"
-                f"✓ Locatie (ca.): {geo}\n"
-                f"✓ Drager: {carrier_name}\n"
-                f"✓ Tijdzone: {', '.join(tzs)}"
-            )
-        except Exception as e:
-            return f"Fout: {e}"
-
-# Maak een enkelvoudig exemplaar
-ghost_service = GhostTrackService()
-# --- EINDE GHOSTTRACK MODULE ---

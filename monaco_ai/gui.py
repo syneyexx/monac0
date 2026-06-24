@@ -13,15 +13,12 @@ import random
 import re
 import threading
 import time
-import phonenumbers
 import tkinter as tk
-from phonenumbers import carrier, geocoder, timezone
 from tkinter import filedialog, messagebox
 from dataclasses import dataclass
 from tkinter import font as tkfont
 from pathlib import Path
 from typing import Any, Callable
-
 from .brain_nodes import BrainGraph, BrainGraphBuilder, BrainNode
 from .commands import CommandContext, CommandRouter
 from .config import Settings
@@ -44,6 +41,7 @@ from .tools_service import (
     read_diagnostic_records,
     test_telegram_token,
     validate_url,
+    ghost_track_service,
 )
 
 from .telegram_settings import (
@@ -338,14 +336,7 @@ class MonacoGUI:
         self.font_small = tkfont.Font(family="Segoe UI", size=10)
         self.font_code = tkfont.Font(family="Consolas", size=11)
         self._apply_brand_icon()
-        self.gt_ip_entry = None
-        self.gt_ip_result = None
-        self.gt_phone_entry = None
-        self.gt_phone_result = None
-        self.gt_user_entry = None
-        self.gt_user_result = None
-        self.gt_myip_result = None
-        
+
         self._build_layout()
         self._add_assistant_message(
             ("SAFE MODE actief. Gebruik Chat, Logs, Tools, Dependency Doctor, Plugin Manager en Build Agent om te repareren." if self.safe_mode else
@@ -3405,6 +3396,140 @@ class MonacoGUI:
         self._show_panel_base("tools_panel", self._build_tools_panel, "Tools online")
         self._tools_refresh_output("Tools ready. Kies een diagnostic of validator.")
 
+    def _build_tools_panel(self) -> tk.Frame:
+        # Maak een nieuwe container frame
+        container = tk.Frame(self.main_panel, bg=P.bg)
+        
+        # 1. Kop
+        header = tk.Frame(container, bg=P.bg)
+        header.pack(fill="x", padx=20, pady=(20, 10))
+        tk.Label(header, text="GhostTrack Tools", font=self.font_heading, bg=P.bg, fg=P.gold).pack()
+        tk.Label(header, text="IP, Telefoon en Username opsporing", font=self.font_body, bg=P.bg, fg=P.muted).pack()
+
+        # 2. Input Sectie
+        input_frame = tk.Frame(container, bg=P.bg)
+        input_frame.pack(fill="x", padx=20, pady=10)
+        
+        # Tabs voor keuzes
+        tab_frame = tk.Frame(input_frame, bg=P.bg)
+        tab_frame.pack(fill="x")
+        
+        # Sla de geselecteerde tool op in de class zodat andere functies erbij kunnen
+        self._gt_selected_tool = "ip"
+        
+        def select_tool(tool):
+            self._gt_selected_tool = tool
+            if tool == "ip":
+                self._gt_label.config(text="Voer IP Adres in (bijv. 8.8.8.8):")
+            elif tool == "phone":
+                self._gt_label.config(text="Voer Telefoonnummer in (bijv. +31612345678):")
+            elif tool == "user":
+                self._gt_label.config(text="Voer Username in (bijv. HunxByts):")
+        
+        # Maak knoppen voor keuzes
+        btn_ip = tk.Button(tab_frame, text="IP Tracker", bg=P.purple_dark, fg=P.text, 
+                           command=lambda: select_tool("ip"), font=self.font_body_small, padx=10, pady=5)
+        btn_ip.pack(side="left", padx=5)
+        
+        btn_phone = tk.Button(tab_frame, text="Phone Tracker", bg=P.purple_dark, fg=P.text, 
+                              command=lambda: select_tool("phone"), font=self.font_body_small, padx=10, pady=5)
+        btn_phone.pack(side="left", padx=5)
+        
+        btn_user = tk.Button(tab_frame, text="Username Tracker", bg=P.purple_dark, fg=P.text, 
+                             command=lambda: select_tool("user"), font=self.font_body_small, padx=10, pady=5)
+        btn_user.pack(side="left", padx=5)
+
+        # Input veld
+        input_row = tk.Frame(input_frame, bg=P.bg)
+        input_row.pack(fill="x", pady=10)
+        
+        self._gt_label = tk.Label(input_row, text="Voer IP Adres in (bijv. 8.8.8.8):", bg=P.bg, fg=P.text)
+        self._gt_label.pack(side="left", padx=(0, 10))
+        
+        self._gt_entry = tk.Entry(input_row, font=self.font_body, bg=P.panel_2, fg=P.text, 
+                                  relief="flat", bd=1, highlightbackground=P.border, highlightthickness=1)
+        self._gt_entry.pack(side="left", fill="x", expand=True)
+        self._gt_entry.insert(0, "8.8.8.8") 
+
+        # Run knop
+        btn_run = tk.Button(input_row, text="Start Tracking", bg=P.green, fg=P.text,
+                            command=self._gt_run_tracking, font=self.font_body, padx=20, pady=10)
+        btn_run.pack(side="left", padx=(10, 0))
+
+        # 3. Output Sectie
+        output_frame = tk.Frame(container, bg=P.bg)
+        output_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        tk.Label(output_frame, text="Resultaten:", bg=P.bg, fg=P.muted, font=self.font_body).pack(anchor="w")
+        
+        # Text widget voor resultaten
+        self._gt_output = tk.Text(output_frame, bg=P.panel_2, fg=P.text, font=self.font_code, 
+                                  relief="flat", bd=1, highlightbackground=P.border, highlightthickness=1,
+                                  wrap="word", height=15)
+        self._gt_output.pack(fill="both", expand=True, pady=10)
+        
+        # Scrollbar
+        scrollbar = tk.Scrollbar(output_frame, command=self._gt_output.yview)
+        scrollbar.pack(side="right", fill="y")
+        self._gt_output.config(yscrollcommand=scrollbar.set)
+
+        return container
+
+    # NIEUWE HULP-FUNCTIE: Voeg deze toe net onder _build_tools_panel
+    def _gt_run_tracking(self):
+        value = self._gt_entry.get().strip()
+        tool = self._gt_selected_tool
+        
+        self._gt_output.delete(1.0, tk.END)
+        self._gt_output.insert(tk.END, f"Zoeken naar: {value}...\n\n")
+        self.root.update_idletasks()
+
+        result = ""
+        if tool == "ip":
+            result = ghost_service.ip_track(value)
+        elif tool == "phone":
+            result = ghost_service.phone_track(value)
+        elif tool == "user":
+            result = f"Username '{value}' gevonden op:\n- GitHub\n- Twitter\n(Functie te implementeren in tools_service)"
+
+        self._gt_output.insert(tk.END, result + "\n")
+
+    def _show_ghosttrack_tool(self, tool_type: str):
+        self.current_ghost_tool = tool_type
+        if tool_type == 'ip':
+            self.ghost_input_label.config(text="Voer IP Adres in:")
+            self.ghost_input_var.set("")
+            self.ghost_output_text.delete(1.0, tk.END)
+        elif tool_type == 'phone':
+            self.ghost_input_label.config(text="Voer Telefoonnummer in (bijv. +31612345678):")
+            self.ghost_input_var.set("")
+            self.ghost_output_text.delete(1.0, tk.END)
+        elif tool_type == 'user':
+            self.ghost_input_label.config(text="Voer Username in:")
+            self.ghost_input_var.set("")
+            self.ghost_output_text.delete(1.0, tk.END)
+
+    def _run_ghosttrack(self):
+        input_val = self.ghost_input_var.get().strip()
+        self.ghost_output_text.insert(tk.END, f"Zoeken naar: {input_val}...\n\n")
+        self.root.update_idletasks()
+
+        try:
+            if self.current_ghost_tool == 'ip':
+                result = ghost_track_service.ip_track(input_val)
+            elif self.current_ghost_tool == 'phone':
+                result = ghost_track_service.phone_track(input_val)
+            elif self.current_ghost_tool == 'user':
+                result = ghost_track_service.username_track(input_val)
+            
+            self.ghost_output_text.insert(tk.END, result + "\n")
+        except Exception as e:
+            self.ghost_output_text.insert(tk.END, f"Fout: {e}\n")
+
+# BELANGRIJK: Zorg dat je de import toevoegt bovenaan gui.py
+# Voeg dit toe aan je imports sectie:
+# from .tools_service import ..., ghost_track_service
+
     def _build_tools_panel(self) -> None:
         self.tools_panel = tk.Frame(self.main_panel, bg=P.bg, padx=22, pady=20)
         self.tools_panel.grid_columnconfigure(0, weight=1)
@@ -3477,238 +3602,6 @@ class MonacoGUI:
         self.tools_output_text = tk.Text(out_card, height=18, bg=P.panel, fg=P.text, relief="flat", font=("Consolas", 10), padx=10, pady=10, wrap="word")
         self.tools_output_text.grid(row=0, column=0, sticky="nsew")
         out_card.grid_rowconfigure(0, weight=1)
-        
-          # --- START GHOST TRACKER INTEGRATIE ---
-        if self.tools_panel is None:
-            return
-            
-        # Verwijder oude inhoud als deze methode meerdere keren wordt aangeroepen (optioneel, afhankelijk van je structuur)
-        for widget in self.tools_panel.winfo_children():
-            widget.pack_forget()
-
-        # Maak een hoofdcontainer voor GhostTrack
-        gt_main = tk.Frame(self.tools_panel, bg=P.panel, bd=1, relief=tk.SOLID)
-        gt_main.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        title = tk.Label(gt_main, text="GHOST TRACKER", font=("Segoe UI", 14, "bold"), fg=P.text, bg=P.panel)
-        title.pack(pady=10)
-        
-        # Grid voor de 4 modules
-        grid_frame = tk.Frame(gt_main, bg=P.panel)
-        grid_frame.pack(fill=tk.BOTH, expand=True)
-        grid_frame.columnconfigure(0, weight=1)
-        grid_frame.columnconfigure(1, weight=1)
-        grid_frame.rowconfigure(0, weight=1)
-        grid_frame.rowconfigure(1, weight=1)
-        
-        # 1. IP TRACKER
-        self._create_tracker_widget(
-            grid_frame, "IP Address Tracker", "Voer IP in (bijv. 8.8.8.8):", 
-            self._run_ip_track, row=0, col=0
-        )
-        
-        # 2. PHONE TRACKER
-        self._create_tracker_widget(
-            grid_frame, "Phone Number Tracker", "Voer nummer in (+62...):", 
-            self._run_phone_track, row=0, col=1
-        )
-        
-        # 3. USERNAME TRACKER
-        self._create_tracker_widget(
-            grid_frame, "Username Tracker", "Voer username in:", 
-            self._run_user_track, row=1, col=0
-        )
-        
-        # 4. MY IP (Apart omdat het geen input heeft)
-        myip_frame = tk.LabelFrame(grid_frame, text="My Public IP", fg=P.accent, bg=P.panel, font=("Segoe UI", 10, "bold"))
-        myip_frame.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
-        
-        btn_myip = tk.Button(
-            myip_frame, text="Get My IP", command=self._run_show_ip,
-            bg=P.accent, fg=P.text, font=("Segoe UI", 10, "bold"), cursor="hand2"
-        )
-        btn_myip.pack(pady=10)
-        
-        self.gt_myip_result = tk.Text(
-            myip_frame, height=3, bg=P.input_bg, fg=P.text, font=("Consolas", 9)
-        )
-        self.gt_myip_result.pack(fill=tk.X, padx=10, pady=5)
-
-    # Hulpfunctie om de widgets voor de trackers te maken
-    def _create_tracker_widget(self, parent, title, placeholder_text, command_func, row, col):
-        frame = tk.LabelFrame(parent, text=title, fg=P.accent, bg=P.panel, font=("Segoe UI", 10, "bold"))
-        frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
-        
-        input_frame = tk.Frame(frame, bg=P.panel)
-        input_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        tk.Label(input_frame, text=placeholder_text, fg=P.text, bg=P.panel, font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=5)
-        
-        entry = tk.Entry(input_frame, bg=P.input_bg, fg=P.text, font=("Segoe UI", 10))
-        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        
-        btn = tk.Button(
-            frame, text="Track", command=command_func,
-            bg=P.accent, fg=P.text, font=("Segoe UI", 10, "bold"), cursor="hand2"
-        )
-        btn.pack(pady=5)
-        
-        result_text = tk.Text(frame, height=15, bg=P.input_bg, fg=P.text, font=("Consolas", 9))
-        result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Sla de referenties op in de class variabelen die we in __init__ hebben aangemaakt
-        if title == "IP Address Tracker":
-            self.gt_ip_entry = entry
-            self.gt_ip_result = result_text
-        elif title == "Phone Number Tracker":
-            self.gt_phone_entry = entry
-            self.gt_phone_result = result_text
-        elif title == "Username Tracker":
-            self.gt_user_entry = entry
-            self.gt_user_result = result_text
-
-    # --- LOGICA FUNCTIES VOOR GHOST TRACKER ---
-
-    def _run_ip_track(self):
-        if not self.gt_ip_entry or not self.gt_ip_result: return
-        ip = self.gt_ip_entry.get().strip()
-        self.gt_ip_result.delete(1.0, tk.END)
-        if not ip:
-            self.gt_ip_result.insert(tk.END, "Voer een IP-adres in.")
-            return
-
-        self.gt_ip_result.insert(tk.END, "Zoeken...")
-        def do_track():
-            try:
-                req_api = requests.get(f"http://ipwho.is/{ip}", timeout=10)
-                ip_data = json.loads(req_api.text)
-                
-                output = [
-                    f"IP: {ip}",
-                    f"Type: {ip_data.get('type', '-')}",
-                    f"Country: {ip_data.get('country', '-')} ({ip_data.get('country_code', '-')})",
-                    f"City: {ip_data.get('city', '-')}",
-                    f"Region: {ip_data.get('region', '-')}",
-                    f"Latitude: {ip_data.get('latitude', '-')}",
-                    f"Longitude: {ip_data.get('longitude', '-')}",
-                    f"Maps: https://www.google.com/maps/@{ip_data.get('latitude', 0)},{ip_data.get('longitude', 0)},8z",
-                    f"Timezone: {ip_data.get('timezone', {}).get('id', '-')}",
-                    f"ISP: {ip_data.get('connection', {}).get('isp', '-')}",
-                    f"Org: {ip_data.get('connection', {}).get('org', '-')}"
-                ]
-                self.gt_ip_result.delete(1.0, tk.END)
-                self.gt_ip_result.insert(tk.END, "\n".join(output))
-            except Exception as e:
-                self.gt_ip_result.delete(1.0, tk.END)
-                self.gt_ip_result.insert(tk.END, f"Fout: {e}")
-        threading.Thread(target=do_track, daemon=True).start()
-
-    def _run_phone_track(self):
-        if not self.gt_phone_entry or not self.gt_phone_result: return
-        user_phone = self.gt_phone_entry.get().strip()
-        self.gt_phone_result.delete(1.0, tk.END)
-        if not user_phone:
-            self.gt_phone_result.insert(tk.END, "Voer een telefoonnummer in (bijv. +628123456789).")
-            return
-
-        self.gt_phone_result.insert(tk.END, "Zoeken...")
-        def do_track():
-            try:
-                default_region = "ID"
-                parsed_number = phonenumbers.parse(user_phone, default_region)
-                
-                region_code = phonenumbers.region_code_for_number(parsed_number)
-                provider = carrier.name_for_number(parsed_number, "en")
-                location = geocoder.description_for_number(parsed_number, "en")
-                is_valid = phonenumbers.is_valid_number(parsed_number)
-                is_possible = phonenumbers.is_possible_number(parsed_number)
-                formatted_intl = phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
-                formatted_mobile = phonenumbers.format_number_for_mobile_dialing(parsed_number, default_region, with_formatting=True)
-                number_type = phonenumbers.number_type(parsed_number)
-                timezones = timezone.time_zones_for_number(parsed_number)
-                timezone_str = ', '.join(timezones)
-                
-                type_str = "Unknown"
-                if number_type == phonenumbers.PhoneNumberType.MOBILE:
-                    type_str = "Mobile"
-                elif number_type == phonenumbers.PhoneNumberType.FIXED_LINE:
-                    type_str = "Fixed Line"
-
-                output = [
-                    f"Location: {location}",
-                    f"Region Code: {region_code}",
-                    f"Timezone: {timezone_str}",
-                    f"Operator: {provider}",
-                    f"Valid: {is_valid}",
-                    f"Possible: {is_possible}",
-                    f"International Format: {formatted_intl}",
-                    f"Mobile Format: {formatted_mobile}",
-                    f"Type: {type_str}",
-                    f"Country Code: {parsed_number.country_code}",
-                    f"Local Number: {parsed_number.national_number}"
-                ]
-                self.gt_phone_result.delete(1.0, tk.END)
-                self.gt_phone_result.insert(tk.END, "\n".join(output))
-            except Exception as e:
-                self.gt_phone_result.delete(1.0, tk.END)
-                self.gt_phone_result.insert(tk.END, f"Fout: {e}")
-        threading.Thread(target=do_track, daemon=True).start()
-
-    def _run_user_track(self):
-        if not self.gt_user_entry or not self.gt_user_result: return
-        username = self.gt_user_entry.get().strip()
-        self.gt_user_result.delete(1.0, tk.END)
-        if not username:
-            self.gt_user_result.insert(tk.END, "Voer een gebruikersnaam in.")
-            return
-
-        self.gt_user_result.insert(tk.END, "Zoeken... (dit kan even duren)\n")
-        
-        def do_track():
-            try:
-                results = []
-                social_media = [
-                    {"url": "https://www.facebook.com/{}", "name": "Facebook"},
-                    {"url": "https://www.twitter.com/{}", "name": "Twitter"},
-                    {"url": "https://www.instagram.com/{}", "name": "Instagram"},
-                    {"url": "https://www.linkedin.com/in/{}", "name": "LinkedIn"},
-                    {"url": "https://www.github.com/{}", "name": "GitHub"},
-                    {"url": "https://www.youtube.com/{}", "name": "Youtube"},
-                    {"url": "https://www.tiktok.com/@{}", "name": "TikTok"},
-                    {"url": "https://www.twitch.tv/{}", "name": "Twitch"}
-                ]
-                for site in social_media:
-                    url = site['url'].format(username)
-                    try:
-                        response = requests.get(url, timeout=5)
-                        if response.status_code == 200:
-                            results.append(f"[+]{site['name']}: {url}")
-                        else:
-                            results.append(f"[-]{site['name']}: Not Found")
-                    except:
-                        results.append(f"[-]{site['name']}: Timeout/Error")
-                
-                self.gt_user_result.delete(1.0, tk.END)
-                self.gt_user_result.insert(tk.END, "\n".join(results))
-            except Exception as e:
-                self.gt_user_result.delete(1.0, tk.END)
-                self.gt_user_result.insert(tk.END, f"Fout: {e}")
-        
-        threading.Thread(target=do_track, daemon=True).start()
-
-    def _run_show_ip(self):
-        if not self.gt_myip_result: return
-        self.gt_myip_result.delete(1.0, tk.END)
-        try:
-            # Gebruik de bestaande functie uit tools_service als deze beschikbaar is, anders direct requests
-            # Hier gebruiken we direct requests voor eenvoud
-            response = requests.get('https://api.ipify.org/', timeout=5)
-            if response.ok:
-                self.gt_myip_result.insert(tk.END, f"Jouw IP Adres: {response.text}")
-            else:
-                self.gt_myip_result.insert(tk.END, "Fout bij ophalen IP")
-        except Exception as e:
-            self.gt_myip_result.insert(tk.END, f"Fout: {e}")
 
     def _tools_card(self, parent: tk.Widget, title: str, row: int, column: int) -> tk.Frame:
         outer = tk.Frame(parent, bg=P.panel_2, padx=14, pady=14, highlightbackground=P.border, highlightthickness=1)
